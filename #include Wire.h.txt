@@ -1,0 +1,101 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+
+// DHT 센서 설정
+#define DHTPIN 2 // DATA 핀을 D2에 연결
+#define DHTTYPE DHT11 // DHT11 또는 DHT22
+DHT dht(DHTPIN, DHTTYPE);
+
+// I2C LCD 설정 (주소는 0x27로 가정, 필요에 따라 변경)
+LiquidCrystal_I2C lcd(0x27, 16, 2); // 16x2 LCD
+
+// 조도 센서 및 첫 번째 릴레이 설정
+int lightSensorPin = A0;   // 조도 감지 센서 핀
+int relayPin = 7;          // 첫 번째 릴레이 모듈 핀
+int lightThreshold = 500;  // 빛이 적을 때의 임계값 (조정 가능)
+
+// 토양 수분 센서 및 두 번째 릴레이 설정
+int soilMoisturePin = A1;      // 토양 수분 감지 센서 핀
+int relayPin2 = 8;             // 두 번째 릴레이 모듈 핀
+int soilMoistureThreshold = 900; // 토양 수분이 낮을 때의 임계값 (조정 가능)
+
+void setup() {
+  Serial.begin(9600);               // 시리얼 통신 시작 (값 확인용)
+  dht.begin();                      // DHT 센서 초기화
+  lcd.begin(16, 2);                 // LCD 초기화 (16 열, 2 행)
+  lcd.backlight();                  // LCD 백라이트 켜기
+  
+  pinMode(lightSensorPin, INPUT);   // 조도 감지 센서 입력 설정
+  pinMode(relayPin, OUTPUT);        // 첫 번째 릴레이 출력 설정
+  digitalWrite(relayPin, LOW);      // 첫 번째 릴레이 OFF로 초기화
+
+  pinMode(soilMoisturePin, INPUT);  // 토양 수분 감지 센서 입력 설정
+  pinMode(relayPin2, OUTPUT);       // 두 번째 릴레이 출력 설정
+  digitalWrite(relayPin2, LOW);     // 두 번째 릴레이 OFF로 초기화
+
+  // 초기 화면 표시를 비웁니다
+  lcd.clear(); // LCD 화면을 지웁니다
+}
+
+void loop() {
+  delay(2000); // 2초 대기
+
+  // 온도 및 습도 읽기
+  float h = dht.readHumidity();
+  float t = dht.readTemperature(); // 섭씨 온도
+
+  // 데이터가 유효한지 확인
+  if (isnan(h) || isnan(t)) {
+    Serial.println("센서에서 읽기 실패!");
+    lcd.clear(); // LCD 화면을 지웁니다
+    lcd.setCursor(0, 0);
+    lcd.print("READ ERROR"); // 오류 메시지 표시
+    return; // 루프 종료
+  }
+
+  // 정상적으로 읽히면 "READ ERROR" 지우고 온도와 습도 표시
+  lcd.clear(); // LCD 화면을 지웁니다
+  lcd.setCursor(0, 1); // 두 번째 줄에 커서 위치
+  lcd.print("C: ");
+  lcd.print(t);
+  lcd.print(" C   "); // 온도 기호 제거 후 'C'만 표시
+
+  lcd.setCursor(0, 0); // 첫 번째 줄에 커서 위치
+  lcd.print("H: ");
+  lcd.print(h);
+  lcd.print(" %   "); // 습도 기호 추가
+
+  // 조도 감지 센서 값 읽기
+  int lightLevel = analogRead(lightSensorPin); // 조도 감지 센서 값 읽기
+  Serial.print("Light Level: ");
+  Serial.println(lightLevel); // 시리얼 모니터에 조도 값 출력
+
+// 온도 및 조도 조건으로 첫 번째 릴레이 제어
+if (t <= 15) {
+    // 온도가 24도 이하일 때 릴레이 ON
+    digitalWrite(relayPin, HIGH);
+} else if (t > 15 && t <= 25 && lightLevel >= lightThreshold) {
+    // 온도가 24 ~ 25도 사이이고 조도가 낮을 때 릴레이 ON
+    digitalWrite(relayPin, HIGH);
+} else if (t > 25 || lightLevel < lightThreshold) {
+    // 온도가 25도를 초과하거나 조도가 충분할 때 릴레이 OFF
+    digitalWrite(relayPin, LOW);
+}
+
+
+
+  // 토양 수분 감지 센서 값 읽기
+  int soilMoistureLevel = analogRead(soilMoisturePin);
+  Serial.print("Soil Moisture Level: ");
+  Serial.println(soilMoistureLevel); // 시리얼 모니터에 토양 수분 값 출력
+
+  // 토양 수분이 낮을 때 두 번째 릴레이 활성화
+  if (soilMoistureLevel > soilMoistureThreshold) {
+    Serial.println("토양 수분 부족, 릴레이2 ON");
+    digitalWrite(relayPin2, HIGH); // 릴레이 ON (수분 부족)
+  } else {
+    Serial.println("토양 수분 충분, 릴레이2 OFF");
+    digitalWrite(relayPin2, LOW);  // 릴레이 OFF (수분 충분)
+  }
+}
